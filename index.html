@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>DASHA-GOTCHI v02 - ENHANCED</title>
+    <style>
+        :root {
+            --bg-color: #88a040;
+            --text-color: #1a1f08;
+            --border: 3px solid var(--text-color);
+        }
+
+        body.retro-green { --bg-color: #88a040; --text-color: #1a1f08; }
+        body.monochrome   { --bg-color: #b0b0b0; --text-color: #000; }
+        body.blue         { --bg-color: #001d3d; --text-color: #00ccff; }
+        body.orange       { --bg-color: #2b1000; --text-color: #ff8c00; }
+        body.red          { --bg-color: #1a0000; --text-color: #ff0000; }
+
+        @keyframes scroll-once {
+            0% { transform: translateX(100%); opacity: 1; }
+            80% { transform: translateX(-150%); opacity: 1; }
+            100% { transform: translateX(-180%); opacity: 0; }
+        }
+
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Courier New', Courier, monospace;
+            margin: 0; padding: 10px;
+            display: flex; justify-content: center;
+            height: 100vh; overflow: hidden;
+            transition: background 0.3s, color 0.3s;
+        }
+
+        .dashboard {
+            width: 100%; max-width: 450px;
+            display: flex; flex-direction: column;
+            gap: 10px; border: var(--border);
+            padding: 15px; border-radius: 20px;
+            background: inherit; align-self: center;
+        }
+
+        .panel { border: var(--border); padding: 10px; text-align: center; background: rgba(0,0,0,0.05); }
+        .row { display: flex; gap: 10px; width: 100%; }
+        .half { width: 50%; }
+
+        #avatar { font-size: 5.5rem; min-height: 110px; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+        #speed { font-size: 5rem; line-height: 1; }
+        #clock { font-size: 1.5rem; font-weight: bold; }
+        
+        /* ENLARGED COMPASS */
+        #direction { 
+            font-size: 3.5rem; 
+            font-weight: 900; 
+            display: inline-block;
+            margin-top: 5px;
+        }
+
+        #quote-container {
+            font-size: 1.35rem; min-height: 40px;
+            overflow: hidden; white-space: nowrap;
+            position: relative; font-weight: bold;
+        }
+
+        .scroll-once {
+            position: absolute;
+            animation: scroll-once 6s linear forwards;
+        }
+
+        #altGraph {
+            width: 100%; height: 60px;
+            border-top: 1px solid var(--text-color);
+            margin-top: 10px;
+        }
+
+        button {
+            background: var(--text-color); color: var(--bg-color);
+            border: none; padding: 12px; font-weight: bold;
+            cursor: pointer; text-transform: uppercase;
+        }
+    </style>
+</head>
+<body class="retro-green">
+
+    <div class="dashboard" id="mainDash">
+        <div class="row">
+            <div class="panel half">
+                <div id="avatar">~_~</div>
+            </div>
+            <div class="panel half">
+                <div id="clock">00:00:00</div>
+                <div><span id="direction">N</span></div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div id="speed">0</div>
+            <div style="font-size:0.8rem">MPH | TOP: <span id="top-speed">0</span></div>
+        </div>
+
+        <div class="panel">
+            <div class="row" style="justify-content: space-around; font-size: 1.2rem;">
+                <div>ALT: <span id="alt">0</span> FT</div>
+                <div>GRAD: <span id="grad">0</span>%</div>
+            </div>
+            <canvas id="altGraph"></canvas>
+        </div>
+
+        <div class="panel">
+            <div id="quote-container"></div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+            <button onclick="startTracking()" id="startBtn">🛰️ Start GPS</button>
+            <button onclick="cycleTheme()">🎨 Color</button>
+            <button onclick="calibrateLevel()">⚖️ Level</button>
+            <button onclick="resetAll()">🔄 Reset</button>
+        </div>
+    </div>
+
+    <script>
+        let topSpeed = 0;
+        let pitchOffset = 0;
+        let currentRawPitch = 0;
+        let altHistory = new Array(50).fill(0); 
+        
+        const themes = ['retro-green', 'monochrome', 'blue', 'orange', 'red'];
+        let themeIdx = 0;
+
+        const quotes = ["SYSTEM READY", "BIG WHEELS KEEP ON TURNING", "STAY VIGILANT", "FUEL CHECK?", "ROAD TRIP!!!", "VIBE CHECK PASS"];
+
+        function updateClock() {
+            const now = new Date();
+            document.getElementById('clock').innerText = now.toTimeString().split(' ')[0];
+        }
+        setInterval(updateClock, 1000);
+
+        function triggerComms() {
+            const container = document.getElementById('quote-container');
+            container.innerHTML = '';
+            const span = document.createElement('span');
+            span.className = 'scroll-once';
+            span.innerText = quotes[Math.floor(Math.random() * quotes.length)];
+            container.appendChild(span);
+        }
+
+        function drawAltGraph() {
+            const canvas = document.getElementById('altGraph');
+            const ctx = canvas.getContext('2d');
+            
+            // GET CURRENT THEME COLOR DYNAMICALLY
+            const color = getComputedStyle(document.documentElement).getPropertyValue('--text-color').trim();
+            
+            canvas.width = canvas.offsetWidth;
+            canvas.height = canvas.offsetHeight;
+            
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+
+            const step = canvas.width / (altHistory.length - 1);
+            const minAlt = Math.min(...altHistory) - 5;
+            const maxAlt = Math.max(...altHistory) + 5;
+            const range = maxAlt - minAlt;
+
+            for(let i = 0; i < altHistory.length; i++) {
+                const x = i * step;
+                const y = canvas.height - ((altHistory[i] - minAlt) / (range || 1) * canvas.height);
+                if(i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+        }
+
+        function getCardinal(angle) {
+            const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+            return directions[Math.round(angle / 45) % 8];
+        }
+
+        function initSensors() {
+            navigator.geolocation.watchPosition((pos) => {
+                const speed = Math.round((pos.coords.speed || 0) * 2.237);
+                const alt = Math.round((pos.coords.altitude || 0) * 3.28);
+                const heading = pos.coords.heading;
+                
+                document.getElementById('speed').innerText = speed;
+                document.getElementById('alt').innerText = alt;
+                if(heading !== null) {
+                    document.getElementById('direction').innerText = getCardinal(heading);
+                }
+
+                altHistory.push(alt);
+                altHistory.shift();
+                drawAltGraph();
+
+                if (speed > topSpeed) {
+                    topSpeed = speed;
+                    document.getElementById('top-speed').innerText = topSpeed;
+                }
+                
+                if(Math.random() > 0.9) triggerComms();
+
+            }, null, { enableHighAccuracy: true });
+
+            window.addEventListener('deviceorientation', (e) => {
+                // Pitch for Gradient
+                currentRawPitch = e.beta || 0;
+                const grad = Math.round(Math.tan((currentRawPitch - pitchOffset) * (Math.PI/180)) * 100);
+                document.getElementById('grad').innerText = Math.min(Math.max(grad, -99), 99);
+
+                // Roll for Avatar Expression (Turning Left/Right)
+                const roll = e.gamma || 0;
+                const avatar = document.getElementById('avatar');
+                if (roll > 15) {
+                    avatar.innerText = ">_>"; // Leaning Right
+                } else if (roll < -15) {
+                    avatar.innerText = "<_<"; // Leaning Left
+                } else {
+                    avatar.innerText = "~_~"; // Center
+                }
+            });
+        }
+
+        function startTracking() {
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                DeviceOrientationEvent.requestPermission().then(s => { if(s==='granted') initSensors(); });
+            } else { initSensors(); }
+            document.getElementById('startBtn').innerText = "🛰️ ACTIVE";
+            triggerComms();
+        }
+
+        function cycleTheme() {
+            document.body.classList.remove(themes[themeIdx]);
+            themeIdx = (themeIdx + 1) % themes.length;
+            document.body.classList.add(themes[themeIdx]);
+            
+            // Wait a tiny bit for CSS variables to update before redrawing graph
+            setTimeout(drawAltGraph, 10);
+        }
+
+        function calibrateLevel() { pitchOffset = currentRawPitch; }
+        function resetAll() { topSpeed = 0; document.getElementById('top-speed').innerText = 0; altHistory.fill(0); drawAltGraph(); }
+        
+        window.addEventListener('resize', drawAltGraph);
+        drawAltGraph();
+    </script>
+</body>
+</html>
