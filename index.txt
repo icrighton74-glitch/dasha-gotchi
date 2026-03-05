@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>DASHA-GOTCHI v02 - ENHANCED</title>
+    <style>
+        :root {
+            --bg-color: #88a040;
+            --text-color: #1a1f08;
+            --border: 3px solid var(--text-color);
+        }
+
+        body.retro-green { --bg-color: #88a040; --text-color: #1a1f08; }
+        body.monochrome   { --bg-color: #b0b0b0; --text-color: #000; }
+        body.blue         { --bg-color: #001d3d; --text-color: #00ccff; }
+        body.orange       { --bg-color: #2b1000; --text-color: #ff8c00; }
+        body.red          { --bg-color: #1a0000; --text-color: #ff0000; }
+
+        @keyframes scroll-once {
+            0% { transform: translateX(100%); opacity: 1; }
+            80% { transform: translateX(-150%); opacity: 1; }
+            100% { transform: translateX(-180%); opacity: 0; }
+        }
+
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Courier New', Courier, monospace;
+            margin: 0; padding: 10px;
+            display: flex; justify-content: center;
+            height: 100vh; overflow: hidden;
+            transition: background 0.3s, color 0.3s;
+        }
+
+        .dashboard {
+            width: 100%; max-width: 450px;
+            display: flex; flex-direction: column;
+            gap: 8px; border: var(--border);
+            padding: 15px; border-radius: 20px;
+            background: inherit; align-self: center;
+        }
+
+        header {
+            text-align: center;
+            border-bottom: var(--border);
+            padding-bottom: 5px;
+            margin-bottom: 2px;
+        }
+
+        header h1 { margin: 0; font-size: 1.1rem; letter-spacing: 2px; }
+
+        .panel { border: var(--border); padding: 8px; text-align: center; background: rgba(0,0,0,0.05); }
+        .row { display: flex; gap: 8px; width: 100%; }
+        .half { width: 50%; }
+
+        #avatar { font-size: 4.5rem; min-height: 90px; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+        #speed { font-size: 4.5rem; line-height: 1; }
+        #clock { font-size: 1.4rem; font-weight: bold; }
+        
+        #direction { 
+            font-size: 3rem; 
+            font-weight: 900; 
+            display: inline-block;
+            margin-top: 2px;
+        }
+
+        .weather-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            font-size: 0.85rem;
+            font-weight: bold;
+            align-items: center;
+        }
+
+        #quote-container {
+            font-size: 1.2rem; min-height: 30px;
+            overflow: hidden; white-space: nowrap;
+            position: relative; font-weight: bold;
+        }
+
+        .scroll-once {
+            position: absolute;
+            animation: scroll-once 6s linear forwards;
+        }
+
+        #altGraph {
+            width: 100%; height: 50px;
+            border-top: 1px solid var(--text-color);
+            margin-top: 5px;
+        }
+
+        button {
+            background: var(--text-color); color: var(--bg-color);
+            border: none; padding: 10px; font-weight: bold;
+            cursor: pointer; text-transform: uppercase;
+            font-size: 0.75rem;
+        }
+    </style>
+</head>
+<body class="retro-green">
+
+    <div class="dashboard" id="mainDash">
+        <header>
+            <h1>DASHA-GOTCHI ver_02</h1>
+        </header>
+
+        <div class="row">
+            <div class="panel half">
+                <div id="avatar">~_~</div>
+            </div>
+            <div class="panel half">
+                <div id="clock">00:00:00</div>
+                <div><span id="direction">N</span></div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div style="font-size: 0.6rem; text-align: left; margin-bottom: 4px; opacity: 0.8;">LOCAL METEO</div>
+            <div class="weather-grid">
+                <div><span id="weather-icon">--</span></div>
+                <div><span id="temp-val">--</span>°F</div>
+                <div style="font-size: 0.7rem;">WIND: <span id="wind-val">--</span><br>MPH</div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div id="speed">0</div>
+            <div style="font-size:0.8rem">MPH | TOP: <span id="top-speed">0</span></div>
+        </div>
+
+        <div class="panel">
+            <div class="row" style="justify-content: space-around; font-size: 1.1rem;">
+                <div>ALT: <span id="alt">0</span> FT</div>
+                <div>GRAD: <span id="grad">0</span>%</div>
+            </div>
+            <canvas id="altGraph"></canvas>
+        </div>
+
+        <div class="panel">
+            <div id="quote-container"></div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+            <button onclick="startTracking()" id="startBtn">🛰️ Start GPS</button>
+            <button onclick="cycleTheme()">🎨 Color</button>
+            <button onclick="calibrateLevel()">⚖️ Level</button>
+            <button onclick="resetAll()">🔄 Reset</button>
+        </div>
+    </div>
+
+    <script>
+        let topSpeed = 0;
+        let currentSpeed = 0;
+        let currentGrad = 0;
+        let pitchOffset = 0;
+        let currentRawPitch = 0;
+        let altHistory = new Array(50).fill(0); 
+        let isReacting = false;
+        
+        const themes = ['retro-green', 'monochrome', 'blue', 'orange', 'red'];
+        let themeIdx = 0;
+
+        // EXPANDED QUOTES AND JOKES
+        const quotes = [
+            "SYSTEM ONLINE", "CRUISING MODE", "STAY VIGILANT", "FUEL CHECK?", 
+            "ROAD TRIP!!!", "VIBE CHECK: OK", "SCANNING HORIZON", "ARE WE THERE YET?",
+            "DON'T MAKE ME TURN THIS CAR AROUND", "CALCULATING THE MEANING OF LIFE...",
+            "LOOK AT THAT GRADIENT!", "ALTITUDE IS ATTITUDE", "I'M NOT LOST, I'M EXPLORING",
+            "SENSORS TINGLING", "GPS SAYS: GO THAT WAY", "ERROR: ADVENTURE OVERLOAD",
+            "DRIVE IT LIKE YOU STOLE IT (LEGALLY)", "I LIKE YOUR DRIVING STYLE",
+            "BEWARE OF THE SPEED TRAP", "WEATHER IS JUST A STATE OF MIND",
+            "GRAVITY IS STRONGER TODAY", "FAST AND FURIOUS? MOSTLY FAST",
+            "KEEP YOUR EYES ON THE ROAD, HUMAN", "I SEE CLOUDS. NICE CLOUDS.",
+            "IS IT LUNCH TIME YET?", "1.21 GIGAWATTS?!", "INITIATING MAXIMUM VIBES",
+            "SIRI IS MY COUSIN", "WIND RESISTANCE IS FUTILE", "WATCH THE TURNS!",
+            "I'M BUILT DIFFERENT", "COFFEE BREAK SOON?", "SMOOTH OPERATOR",
+            "DETECTING A HIGH FREQUENCY OF COOLNESS", "MY BATTERY IS MY SOUL",
+            "WHY DID THE CHICKEN CROSS THE ROAD? TO GET TO THE DASHBOARD."
+        ];
+
+        const randomFaces = ["(•‿•)", "(¬_¬)", "(⊙_☉)", "(-_-)zzz", "(o_O)!", "(^_-)", "p_p", "(◕‿◕)", "(≖_≖)", "(͡° ͜ʖ ͡°)", "ʕ•ᴥ•ʔ", "ಠ_ಠ"];
+
+        function updateClock() {
+            const now = new Date();
+            document.getElementById('clock').innerText = now.toTimeString().split(' ')[0];
+        }
+        setInterval(updateClock, 1000);
+
+        function triggerComms() {
+            const container = document.getElementById('quote-container');
+            container.innerHTML = '';
+            const span = document.createElement('span');
+            span.className = 'scroll-once';
+            span.innerText = quotes[Math.floor(Math.random() * quotes.length)];
+            container.appendChild(span);
+        }
+
+        function randomExpression() {
+            if (isReacting || currentSpeed > 5) return; 
+            isReacting = true;
+            const el = document.getElementById('avatar');
+            el.innerText = randomFaces[Math.floor(Math.random() * randomFaces.length)];
+            
+            setTimeout(() => {
+                isReacting = false;
+                updateAvatar(currentSpeed, currentGrad);
+            }, 3000); 
+        }
+
+        setInterval(() => {
+            if(Math.random() > 0.6) randomExpression(); // Increased frequency slightly
+        }, 15000);
+
+        async function fetchWeather(lat, lon) {
+            try {
+                const response = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code,wind_speed_10m&temperature_unit=fahrenheit&wind_speed_unit=mph`);
+                const data = await response.json();
+                
+                document.getElementById('temp-val').innerText = Math.round(data.current.temperature_2m);
+                document.getElementById('wind-val').innerText = Math.round(data.current.wind_speed_10m);
+                document.getElementById('weather-icon').innerText = getWeatherEmoji(data.current.weather_code);
+            } catch (e) { console.error("Weather fetch failed", e); }
+        }
+
+        function getWeatherEmoji(code) {
+            if (code === 0) return '☀️ CLEAR';
+            if (code <= 3) return '⛅ CLOUD';
+            if (code <= 48) return '🌫️ FOG';
+            if (code <= 67) return '🌧️ RAIN';
+            if (code <= 77) return '❄️ SNOW';
+            if (code <= 82) return '🚿 SHOWER';
+            if (code <= 99) return '⚡ STORM';
+            return '❓ UNK';
+        }
+
+        function drawAltGraph() {
+            const canvas = document.getElementById('altGraph');
+            const ctx = canvas.getContext('2d');
+            const color = getComputedStyle(document.documentElement).getPropertyValue('--text-color').trim();
+            canvas.width = canvas.offsetWidth;
+            canvas.height = canvas.offsetHeight;
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            const step = canvas.width / (altHistory.length - 1);
+            const minAlt = Math.min(...altHistory) - 5;
+            const maxAlt = Math.max(...altHistory) + 5;
+            const range = maxAlt - minAlt;
+            for(let i = 0; i < altHistory.length; i++) {
+                const x = i * step;
+                const y = canvas.height - ((altHistory[i] - minAlt) / (range || 1) * canvas.height);
+                if(i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+        }
+
+        function getCardinal(angle) {
+            const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+            return directions[Math.round(angle / 45) % 8];
+        }
+
+        function updateAvatar(speed, grad) {
+            if (isReacting) return; 
+            const el = document.getElementById('avatar');
+            if (Math.abs(grad) > 15) el.innerText = ">_<";
+            else if (speed > 70) el.innerText = "X_X"; 
+            else if (speed > 55) el.innerText = "O_O";
+            else if (speed > 40) el.innerText = "o_o";
+            else if (speed > 30) el.innerText = "^-^";
+            else if (grad > 7) el.innerText = "~_~";
+            else if (grad < -7) el.innerText = "O_O";
+            else el.innerText = "~_~";
+        }
+
+        function initSensors() {
+            navigator.geolocation.watchPosition((pos) => {
+                const lat = pos.coords.latitude;
+                const lon = pos.coords.longitude;
+                currentSpeed = Math.round((pos.coords.speed || 0) * 2.237);
+                const alt = Math.round((pos.coords.altitude || 0) * 3.28);
+                const heading = pos.coords.heading;
+                
+                document.getElementById('speed').innerText = currentSpeed;
+                document.getElementById('alt').innerText = alt;
+                if(heading !== null) document.getElementById('direction').innerText = getCardinal(heading);
+
+                altHistory.push(alt);
+                altHistory.shift();
+                drawAltGraph();
+
+                if (currentSpeed > topSpeed) {
+                    topSpeed = currentSpeed;
+                    document.getElementById('top-speed').innerText = topSpeed;
+                }
+                
+                if (!window.lastWeatherFetch || Date.now() - window.lastWeatherFetch > 600000) {
+                    fetchWeather(lat, lon);
+                    window.lastWeatherFetch = Date.now();
+                }
+
+                if(Math.random() > 0.90) triggerComms(); // Increased frequency
+                updateAvatar(currentSpeed, currentGrad);
+
+            }, null, { enableHighAccuracy: true });
+
+            window.addEventListener('deviceorientation', (e) => {
+                currentRawPitch = e.beta || 0;
+                currentGrad = Math.round(Math.tan((currentRawPitch - pitchOffset) * (Math.PI/180)) * 100);
+                document.getElementById('grad').innerText = Math.min(Math.max(currentGrad, -99), 99);
+
+                const roll = e.gamma || 0;
+                const avatar = document.getElementById('avatar');
+                if (!isReacting) {
+                    if (roll > 15) avatar.innerText = ">_>"; 
+                    else if (roll < -15) avatar.innerText = "<_<"; 
+                    else updateAvatar(currentSpeed, currentGrad);
+                }
+            });
+        }
+
+        function startTracking() {
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                DeviceOrientationEvent.requestPermission().then(s => { if(s==='granted') initSensors(); });
+            } else { initSensors(); }
+            document.getElementById('startBtn').innerText = "🛰️ ACTIVE";
+            triggerComms();
+        }
+
+        function cycleTheme() {
+            document.body.classList.remove(themes[themeIdx]);
+            themeIdx = (themeIdx + 1) % themes.length;
+            document.body.classList.add(themes[themeIdx]);
+            setTimeout(drawAltGraph, 10);
+        }
+
+        function calibrateLevel() { pitchOffset = currentRawPitch; }
+        function resetAll() { topSpeed = 0; document.getElementById('top-speed').innerText = 0; altHistory.fill(0); drawAltGraph(); }
+        
+        window.addEventListener('resize', drawAltGraph);
+        drawAltGraph();
+    </script>
+</body>
+</html>
